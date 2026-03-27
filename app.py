@@ -1,11 +1,8 @@
 import logging
-import threading
+import os
 
 import anthropic
-import uvicorn
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from dashboard.app import create_dash_app
@@ -66,57 +63,31 @@ def initialize_components() -> dict:
     }
 
 
-def create_api(components: dict) -> FastAPI:
-    api = FastAPI(title="NE2 API")
-    api.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# Initialize everything at module level so gunicorn can find the Dash server
+components = initialize_components()
 
-    @api.get("/api/health")
-    def health():
-        return {"status": "ok"}
+# Start scheduler
+scheduler = BackgroundScheduler()
+scheduler.add_job(
+    run_analysis_cycle, "interval", hours=settings.cycle_interval_hours,
+    kwargs={
+        "ingestion": components["ingestion"], "prediction_engine": components["prediction_engine"],
+        "trading_engine": components["trading_engine"], "db": components["db"],
+        "min_mispricing": settings.min_mispricing, "min_confidence": settings.min_confidence,
+    },
+)
+scheduler.start()
+logger.info("Scheduler started")
 
-    @api.post("/api/analyze")
-    def trigger_analysis():
-        run_analysis_cycle(
-            ingestion=components["ingestion"], prediction_engine=components["prediction_engine"],
-            trading_engine=components["trading_engine"], db=components["db"],
-            min_mispricing=settings.min_mispricing, min_confidence=settings.min_confidence,
-        )
-        return {"status": "cycle_complete"}
+# Create Dash app — this is what gunicorn serves
+dash_app = create_dash_app(
+    db=components["db"], portfolio=components["portfolio"],
+    risk_manager=components["risk_manager"], ingestion=components["ingestion"],
+)
 
-    @api.post("/api/kill-switch")
-    def toggle_kill_switch():
-        rm = components["risk_manager"]
-        rm.kill_switch = not rm.kill_switch
-        return {"kill_switch": rm.kill_switch}
-
-    return api
-
-
-def main():
-    components = initialize_components()
-    api = create_api(components)
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(
-        run_analysis_cycle, "interval", hours=settings.cycle_interval_hours,
-        kwargs={
-            "ingestion": components["ingestion"], "prediction_engine": components["prediction_engine"],
-            "trading_engine": components["trading_engine"], "db": components["db"],
-            "min_mispricing": settings.min_mispricing, "min_confidence": settings.min_confidence,
-        },
-    )
-    scheduler.start()
-    dash_app = create_dash_app(
-        db=components["db"], portfolio=components["portfolio"], risk_manager=components["risk_manager"],
-        ingestion=components["ingestion"],
-    )
-    dash_thread = threading.Thread(
-        target=dash_app.run, kwargs={"host": "0.0.0.0", "port": settings.dash_port, "debug": False}, daemon=True,
-    )
-    dash_thread.start()
-    logger.info(f"Dashboard running at http://localhost:{settings.dash_port}")
-    logger.info(f"API running at http://localhost:{settings.fastapi_port}")
-    uvicorn.run(api, host="0.0.0.0", port=settings.fastapi_port)
-
+# Expose the Flask server for gunicorn
+server = dash_app.server
 
 if __name__ == "__main__":
-    main()
+    port = int(os.environ.get("PORT", 8050))
+    dash_app.run(host="0.0.0.0", port=port, debug=False)

@@ -1,16 +1,11 @@
-from unittest.mock import MagicMock, patch
-from fastapi.testclient import TestClient
+from unittest.mock import MagicMock
 
-def test_health_endpoint():
-    with patch("app.initialize_components") as mock_init:
-        mock_init.return_value = {
-            "db": MagicMock(), "ingestion": MagicMock(),
-            "prediction_engine": MagicMock(), "trading_engine": MagicMock(),
-            "risk_manager": MagicMock(), "portfolio": MagicMock(),
-        }
-        from app import create_api
-        api = create_api(mock_init.return_value)
-        client = TestClient(api)
-        response = client.get("/api/health")
-        assert response.status_code == 200
-        assert response.json()["status"] == "ok"
+
+def test_dash_app_creates_server():
+    from dashboard.app import create_dash_app
+
+    mock_db = MagicMock()
+    mock_db.conn = MagicMock()
+    app = create_dash_app(db=mock_db)
+    assert app is not None
+    assert app.server is not None
