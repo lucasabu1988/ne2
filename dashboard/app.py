@@ -35,7 +35,7 @@ def create_dash_app(db, portfolio=None, risk_manager=None, ingestion=None, predi
         else:
             return markets_layout()
 
-    register_markets_callbacks(app, db, ingestion=ingestion)
+    register_markets_callbacks(app, db, ingestion=ingestion, prediction_engine=prediction_engine)
     if portfolio and risk_manager:
         register_portfolio_callbacks(app, db, portfolio, risk_manager)
         register_control_callbacks(app, db, risk_manager)

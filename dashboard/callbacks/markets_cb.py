@@ -1,22 +1,36 @@
-from dash import Input, Output, callback, ctx, no_update
+import logging
+from dash import Input, Output, ctx, no_update
+
+logger = logging.getLogger(__name__)
 
 
-def register_markets_callbacks(app, db, ingestion=None):
+def register_markets_callbacks(app, db, ingestion=None, prediction_engine=None):
     @app.callback(
         Output("markets-table", "data"),
         Input("markets-interval", "n_intervals"),
         Input("btn-analyze", "n_clicks"),
     )
     def update_markets_table(n, n_clicks):
-        # If the button was clicked, run ingestion first
         triggered = ctx.triggered_id
-        if triggered == "btn-analyze" and n_clicks and ingestion:
-            try:
-                ingestion.run(top_n=20)
-            except Exception:
-                pass
 
-        # Always load whatever is in the DB
+        # If button was clicked, run full pipeline: ingest → predict
+        if triggered == "btn-analyze" and n_clicks:
+            snapshots = []
+            if ingestion:
+                try:
+                    snapshots = ingestion.run(top_n=20)
+                    logger.info(f"Ingested {len(snapshots)} markets")
+                except Exception as e:
+                    logger.error(f"Ingestion failed: {e}")
+
+            if snapshots and prediction_engine:
+                try:
+                    predictions = prediction_engine.predict_batch(snapshots)
+                    logger.info(f"Generated {len(predictions)} predictions")
+                except Exception as e:
+                    logger.error(f"Prediction failed: {e}")
+
+        # Load from DB
         rows = []
         try:
             market_rows = db.conn.execute(

@@ -92,6 +92,7 @@ logger.info("Scheduler started")
 dash_app = create_dash_app(
     db=components["db"], portfolio=components["portfolio"],
     risk_manager=components["risk_manager"], ingestion=components["ingestion"],
+    prediction_engine=components["prediction_engine"],
 )
 
 # Expose the Flask server for gunicorn
