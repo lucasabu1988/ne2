@@ -9,4 +9,4 @@ dist/
 build/
 venv/
 .venv/
-models/*.joblib
+# models/*.joblib — kept in git for cloud deploy

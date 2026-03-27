@@ -41,6 +41,15 @@ def initialize_components() -> dict:
     ingestion = DataIngestion(polymarket=polymarket, news=news, sentiment=sentiment, economic=economic, db=db)
     feature_engineer = FeatureEngineer()
     ml_ensemble = MLEnsemble()
+
+    # Load trained model if available
+    model_path = "models/ensemble.joblib"
+    if os.path.exists(model_path):
+        ml_ensemble.load(model_path)
+        logger.info(f"Loaded trained ML model from {model_path}")
+    else:
+        logger.warning("No trained ML model found — predictions will not work until you run: python -m prediction.training")
+
     llm_client = anthropic.Anthropic(api_key=settings.anthropic_api_key) if settings.anthropic_api_key else None
     llm_analyzer = LLMAnalyzer(client=llm_client)
     combiner = SignalCombiner()
