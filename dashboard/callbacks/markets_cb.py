@@ -16,6 +16,7 @@ def register_markets_callbacks(app, db, ingestion=None, prediction_engine=None):
         Output("market-summary-cards", "children"),
         Input("markets-interval", "n_intervals"),
         Input("btn-analyze", "n_clicks"),
+        prevent_initial_call=True,
     )
     def update_markets_table(n, n_clicks):
         triggered = ctx.triggered_id
@@ -86,6 +87,7 @@ def register_markets_callbacks(app, db, ingestion=None, prediction_engine=None):
         Output("market-detail-panel", "children"),
         Input("markets-table", "selected_rows"),
         State("markets-table", "data"),
+        prevent_initial_call=True,
     )
     def show_market_detail(selected_rows, data):
         if not selected_rows or not data:
