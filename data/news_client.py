@@ -8,12 +8,15 @@ class NewsClient:
         self.client = httpx.Client(timeout=30.0)
 
     def search(self, query: str, days_back: int = 3, max_results: int = 20) -> list[dict]:
+        if not self.api_key:
+            return []
         from_date = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
         response = self.client.get(
             f"{self.base_url}/everything",
             params={"q": query, "from": from_date, "sortBy": "relevancy", "pageSize": max_results, "apiKey": self.api_key},
         )
-        response.raise_for_status()
+        if response.status_code != 200:
+            return []
         data = response.json()
         return data.get("articles", [])
 
