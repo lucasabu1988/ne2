@@ -11,10 +11,7 @@ def markets_layout():
                 html.Small(id="last-updated", className="text-muted"),
             ]),
             dbc.Col(
-                dbc.Button(
-                    [dbc.Spinner(size="sm", id="analyze-spinner", style={"display": "none"}), " Analyze Now"],
-                    id="btn-analyze", color="primary", className="float-end",
-                ),
+                dbc.Button("Analyze Now", id="btn-analyze", color="primary", className="float-end"),
                 width="auto",
             ),
         ], className="mb-3"),
