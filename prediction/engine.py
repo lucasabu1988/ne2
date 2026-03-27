@@ -5,7 +5,7 @@ logger = logging.getLogger(__name__)
 
 class PredictionEngine:
     def __init__(self, feature_engineer, ml_ensemble, llm_analyzer, combiner, db,
-                 ml_confidence_threshold: float = 0.50):
+                 ml_confidence_threshold: float = 0.10):
         self.feature_engineer = feature_engineer
         self.ml_ensemble = ml_ensemble
         self.llm_analyzer = llm_analyzer
