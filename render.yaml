@@ -3,9 +3,11 @@ services:
     name: ne2-predictor
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:server --bind 0.0.0.0:$PORT --workers 1 --timeout 120
+    startCommand: gunicorn app:server --bind 0.0.0.0:$PORT --workers 1 --timeout 300
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.0"
       - key: DB_PATH
         value: "/tmp/ne2.db"
+      - key: TRANSFORMERS_CACHE
+        value: "/tmp/hf_cache"

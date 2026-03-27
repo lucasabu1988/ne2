@@ -16,8 +16,9 @@ pandas>=2.2.3
 numpy>=1.26.4
 joblib>=1.4.2
 
-# LLM
-anthropic>=0.43.0
+# NLI Model (local, no API needed)
+transformers>=4.40.0
+torch>=2.2.0
 
 # Scheduler
 apscheduler>=3.10.4

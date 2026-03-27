@@ -1,92 +1,97 @@
-import json
+"""Market analyzer using local Hugging Face zero-shot classification model.
+No API key needed — runs entirely on CPU."""
+
 import logging
-import re
 from data.models import MarketSnapshot
 
 logger = logging.getLogger(__name__)
 
-ANALYSIS_PROMPT = """You are a prediction market analyst. Analyze this market and estimate the true probability of the outcome.
+# Lazy-loaded model to avoid slow import at startup
+_classifier = None
 
-Market Question: {question}
-Category: {category}
-Current Polymarket Price (implied probability): {price:.1%}
-24h Volume: ${volume:,.0f}
 
-Recent News (relevance score: {news_score:.2f}):
-{headlines}
+def _get_classifier():
+    global _classifier
+    if _classifier is None:
+        logger.info("Loading zero-shot classification model (first time only)...")
+        from transformers import pipeline
+        _classifier = pipeline(
+            "zero-shot-classification",
+            model="typeform/distilbert-base-uncased-mnli",
+            device=-1,  # CPU
+        )
+        logger.info("Model loaded.")
+    return _classifier
 
-Social Sentiment Score: {sentiment:.2f} (-1 bearish to +1 bullish)
-Sentiment Velocity: {sentiment_vel:+.2f}
-
-Economic Context:
-{economic}
-
-Analyze:
-1. What do the news headlines imply about this outcome?
-2. Does the sentiment align with or diverge from the current price?
-3. Are there factors the market might be underweighting or overweighting?
-4. What is your estimated true probability?
-
-Respond in JSON format:
-{{"probability": 0.XX, "reasoning": "Your 2-3 sentence analysis"}}
-"""
 
 class LLMAnalyzer:
-    def __init__(self, client=None, model: str = "claude-sonnet-4-6"):
-        self.client = client
-        self.model = model
+    def __init__(self, client=None, **kwargs):
+        # client param kept for backwards compatibility but ignored
+        pass
 
     def analyze(self, snapshot: MarketSnapshot) -> tuple[float, str]:
         try:
-            prompt = self._build_prompt(snapshot)
-            response = self.client.messages.create(
-                model=self.model, max_tokens=500,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            text = response.content[0].text
-            return self._parse_response(text)
+            return self._analyze_with_nli(snapshot)
         except Exception as e:
-            logger.error(f"LLM analysis failed for {snapshot.market_id}: {e}")
+            logger.error(f"Analysis failed for {snapshot.market_id}: {e}")
             return 0.5, f"Analysis failed: {e}"
 
-    def _build_prompt(self, snap: MarketSnapshot) -> str:
-        headlines = "\n".join(f"- {h}" for h in snap.latest_headlines) or "- No recent headlines"
-        eco_items = []
-        for k, v in snap.economic_indicators.items():
-            if k == "crypto":
-                for coin, data in v.items():
-                    if isinstance(data, dict):
-                        eco_items.append(f"- {coin}: ${data.get('usd', 0):,.0f}")
-            else:
-                eco_items.append(f"- {k}: {v}")
-        economic = "\n".join(eco_items) or "- No data available"
-        return ANALYSIS_PROMPT.format(
-            question=snap.question, category=snap.category,
-            price=snap.polymarket_price, volume=snap.volume_24h,
-            news_score=snap.news_score, headlines=headlines,
-            sentiment=snap.sentiment_score, sentiment_vel=snap.sentiment_velocity,
-            economic=economic,
-        )
+    def _analyze_with_nli(self, snap: MarketSnapshot) -> tuple[float, str]:
+        classifier = _get_classifier()
+        question = snap.question
+        headlines = snap.latest_headlines[:5]
 
-    def _parse_response(self, text: str) -> tuple[float, str]:
-        try:
-            data = json.loads(text)
-            prob = float(data["probability"])
-            reasoning = data["reasoning"]
-            return max(0.0, min(1.0, prob)), reasoning
-        except (json.JSONDecodeError, KeyError, TypeError):
-            pass
-        json_match = re.search(r'\{[^}]+\}', text)
-        if json_match:
-            try:
-                data = json.loads(json_match.group())
-                prob = float(data.get("probability", 0.5))
-                reasoning = data.get("reasoning", text)
-                return max(0.0, min(1.0, prob)), reasoning
-            except (json.JSONDecodeError, ValueError):
-                pass
-        numbers = re.findall(r'0\.\d+', text)
-        if numbers:
-            prob = float(numbers[0])
-            return max(0.0, min(1.0, prob)), text
-        return 0.5, text
+        if not headlines:
+            return self._fallback_analysis(snap)
+
+        # Classify each headline: does it support YES or NO for this market?
+        yes_label = f"Yes, {question}"
+        no_label = f"No, not {question}"
+        labels = [yes_label, no_label, "unrelated"]
+
+        yes_scores = []
+        reasoning_parts = []
+
+        for headline in headlines:
+            result = classifier(headline, candidate_labels=labels)
+            top_label = result["labels"][0]
+            top_score = result["scores"][0]
+
+            if top_label == yes_label:
+                yes_scores.append(top_score)
+                reasoning_parts.append(f"'{headline[:60]}' → supports YES ({top_score:.0%})")
+            elif top_label == no_label:
+                yes_scores.append(1.0 - top_score)
+                reasoning_parts.append(f"'{headline[:60]}' → supports NO ({top_score:.0%})")
+            else:
+                yes_scores.append(0.5)
+                reasoning_parts.append(f"'{headline[:60]}' → unrelated")
+
+        # Aggregate headline signals
+        if yes_scores:
+            news_probability = sum(yes_scores) / len(yes_scores)
+        else:
+            news_probability = 0.5
+
+        # Blend with market signals
+        sentiment_adjustment = snap.sentiment_score * 0.1  # +-10% max
+        news_weight = min(snap.news_score, 1.0) * 0.3  # news_score determines how much news matters
+
+        # Final probability: market price as anchor, adjusted by news + sentiment
+        anchor = snap.polymarket_price
+        news_pull = (news_probability - anchor) * news_weight
+        final_prob = anchor + news_pull + sentiment_adjustment
+        final_prob = max(0.01, min(0.99, final_prob))
+
+        reasoning = f"Analyzed {len(headlines)} headlines. " + " | ".join(reasoning_parts[:3])
+        if snap.sentiment_score != 0:
+            reasoning += f" | Sentiment: {snap.sentiment_score:+.2f}"
+
+        return final_prob, reasoning
+
+    def _fallback_analysis(self, snap: MarketSnapshot) -> tuple[float, str]:
+        """When no news is available, use market signals only."""
+        price = snap.polymarket_price
+        sentiment_adj = snap.sentiment_score * 0.05
+        prob = max(0.01, min(0.99, price + sentiment_adj))
+        return prob, "No recent news found. Using market price + sentiment only."

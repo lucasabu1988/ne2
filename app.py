@@ -1,7 +1,6 @@
 import logging
 import os
 
-import anthropic
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from config import settings
@@ -50,8 +49,7 @@ def initialize_components() -> dict:
     else:
         logger.warning("No trained ML model found — predictions will not work until you run: python -m prediction.training")
 
-    llm_client = anthropic.Anthropic(api_key=settings.anthropic_api_key) if settings.anthropic_api_key else None
-    llm_analyzer = LLMAnalyzer(client=llm_client)
+    llm_analyzer = LLMAnalyzer()
     combiner = SignalCombiner()
     prediction_engine = PredictionEngine(
         feature_engineer=feature_engineer, ml_ensemble=ml_ensemble,
