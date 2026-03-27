@@ -1,5 +1,4 @@
-from dash import Input, Output, State, callback, no_update, html
-import dash_bootstrap_components as dbc
+from dash import Input, Output, callback, ctx, no_update
 
 
 def register_markets_callbacks(app, db, ingestion=None):
@@ -9,10 +8,18 @@ def register_markets_callbacks(app, db, ingestion=None):
         Input("btn-analyze", "n_clicks"),
     )
     def update_markets_table(n, n_clicks):
+        # If the button was clicked, run ingestion first
+        triggered = ctx.triggered_id
+        if triggered == "btn-analyze" and n_clicks and ingestion:
+            try:
+                ingestion.run(top_n=20)
+            except Exception:
+                pass
+
+        # Always load whatever is in the DB
         rows = []
         try:
-            conn = db.conn
-            market_rows = conn.execute(
+            market_rows = db.conn.execute(
                 "SELECT DISTINCT market_id FROM snapshots ORDER BY timestamp DESC LIMIT 20"
             ).fetchall()
             for mr in market_rows:
@@ -21,7 +28,7 @@ def register_markets_callbacks(app, db, ingestion=None):
                 pred = db.get_latest_prediction(mid)
                 if not snap:
                     continue
-                row = {
+                rows.append({
                     "market_id": mid,
                     "question": snap.question[:80],
                     "category": snap.category,
@@ -31,38 +38,9 @@ def register_markets_callbacks(app, db, ingestion=None):
                     "confidence": pred.confidence if pred else None,
                     "volume_24h": snap.volume_24h,
                     "signal": _signal_label(pred) if pred else "-",
-                }
-                rows.append(row)
+                })
         except Exception:
             pass
-
-        # If no data and button was clicked, try to fetch from Polymarket
-        if not rows and n_clicks and ingestion:
-            try:
-                ingestion.run(top_n=20)
-                # Re-fetch after ingestion
-                market_rows = db.conn.execute(
-                    "SELECT DISTINCT market_id FROM snapshots ORDER BY timestamp DESC LIMIT 20"
-                ).fetchall()
-                for mr in market_rows:
-                    mid = mr["market_id"]
-                    snap = db.get_latest_snapshot(mid)
-                    if not snap:
-                        continue
-                    rows.append({
-                        "market_id": mid,
-                        "question": snap.question[:80],
-                        "category": snap.category,
-                        "polymarket_price": snap.polymarket_price,
-                        "prediction": None,
-                        "mispricing": None,
-                        "confidence": None,
-                        "volume_24h": snap.volume_24h,
-                        "signal": "-",
-                    })
-            except Exception as e:
-                db.save_log("ERROR", "dashboard", f"Manual ingestion failed: {e}")
-
         return rows
 
     @app.callback(
