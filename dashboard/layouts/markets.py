@@ -8,6 +8,12 @@ def markets_layout():
             dbc.Col(dbc.Button("Analyze Now", id="btn-analyze", color="primary", className="float-end"), width="auto"),
         ], className="mb-3"),
         dbc.Row([
+            dbc.Col(html.P(
+                "Click 'Analyze Now' to fetch live markets from Polymarket",
+                className="text-muted", id="markets-hint",
+            )),
+        ], className="mb-2"),
+        dbc.Row([
             dbc.Col([
                 dash_table.DataTable(
                     id="markets-table",

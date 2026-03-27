@@ -6,7 +6,7 @@ from dashboard.callbacks.markets_cb import register_markets_callbacks
 from dashboard.callbacks.portfolio_cb import register_portfolio_callbacks
 from dashboard.callbacks.control_cb import register_control_callbacks
 
-def create_dash_app(db, portfolio=None, risk_manager=None) -> dash.Dash:
+def create_dash_app(db, portfolio=None, risk_manager=None, ingestion=None, prediction_engine=None, trading_engine=None) -> dash.Dash:
     app = dash.Dash(__name__, external_stylesheets=[dbc.themes.CYBORG], suppress_callback_exceptions=True)
     app.layout = html.Div([
         dbc.Navbar(
@@ -35,7 +35,7 @@ def create_dash_app(db, portfolio=None, risk_manager=None) -> dash.Dash:
         else:
             return markets_layout()
 
-    register_markets_callbacks(app, db)
+    register_markets_callbacks(app, db, ingestion=ingestion)
     if portfolio and risk_manager:
         register_portfolio_callbacks(app, db, portfolio, risk_manager)
         register_control_callbacks(app, db, risk_manager)

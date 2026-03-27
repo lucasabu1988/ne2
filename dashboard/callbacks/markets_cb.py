@@ -1,11 +1,14 @@
-from dash import Input, Output, callback, no_update
+from dash import Input, Output, State, callback, no_update, html
+import dash_bootstrap_components as dbc
 
-def register_markets_callbacks(app, db):
+
+def register_markets_callbacks(app, db, ingestion=None):
     @app.callback(
         Output("markets-table", "data"),
         Input("markets-interval", "n_intervals"),
+        Input("btn-analyze", "n_clicks"),
     )
-    def update_markets_table(n):
+    def update_markets_table(n, n_clicks):
         rows = []
         try:
             conn = db.conn
@@ -32,6 +35,34 @@ def register_markets_callbacks(app, db):
                 rows.append(row)
         except Exception:
             pass
+
+        # If no data and button was clicked, try to fetch from Polymarket
+        if not rows and n_clicks and ingestion:
+            try:
+                ingestion.run(top_n=20)
+                # Re-fetch after ingestion
+                market_rows = db.conn.execute(
+                    "SELECT DISTINCT market_id FROM snapshots ORDER BY timestamp DESC LIMIT 20"
+                ).fetchall()
+                for mr in market_rows:
+                    mid = mr["market_id"]
+                    snap = db.get_latest_snapshot(mid)
+                    if not snap:
+                        continue
+                    rows.append({
+                        "market_id": mid,
+                        "question": snap.question[:80],
+                        "category": snap.category,
+                        "polymarket_price": snap.polymarket_price,
+                        "prediction": None,
+                        "mispricing": None,
+                        "confidence": None,
+                        "volume_24h": snap.volume_24h,
+                        "signal": "-",
+                    })
+            except Exception as e:
+                db.save_log("ERROR", "dashboard", f"Manual ingestion failed: {e}")
+
         return rows
 
     @app.callback(
@@ -44,6 +75,7 @@ def register_markets_callbacks(app, db):
             return no_update
         idx = selected_rows[0]
         return data[idx].get("market_id")
+
 
 def _signal_label(pred) -> str:
     if not pred or abs(pred.mispricing) < 0.10 or pred.confidence < 0.80:

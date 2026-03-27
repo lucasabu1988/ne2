@@ -107,6 +107,7 @@ def main():
     scheduler.start()
     dash_app = create_dash_app(
         db=components["db"], portfolio=components["portfolio"], risk_manager=components["risk_manager"],
+        ingestion=components["ingestion"],
     )
     dash_thread = threading.Thread(
         target=dash_app.run, kwargs={"host": "0.0.0.0", "port": settings.dash_port, "debug": False}, daemon=True,
